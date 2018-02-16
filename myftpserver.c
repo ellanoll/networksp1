@@ -71,21 +71,21 @@ int send_open(int newSocket){ //sends an open connection reply to client
 }
 
 
-int authenticate_user(char loginInfo[1024]){
+int authenticate(char loginInfo[1024]){
 	FILE *fp; //filepointer
-	char USR[1024]; //username and password
+	char USR_PASS[1024]; //username and password
 
 	if(fp = fopen("access.txt","rb"), fp == NULL) //open file w/ usr/pass combos
 		return 0;
 	else{
-		while( fgets(USR, 1024, fp) != NULL ){
-			USR[strlen(USR)-1] = '\0';
+		while( fgets(USR_PASS, 1024, fp) != NULL ){
+			USR_PASS[strlen(USR_PASS)-1] = '\0';
 			printf("login data: %s\n", loginInfo);
 			printf("login data length: %d\n", (int)strlen(loginInfo));
-			printf("cmp data: %s\n", USR);
-			printf("cmp data length: %d\n", (int)strlen(USR));
-			printf("cmp result: %d\n", strcmp(loginInfo, USR));
-			if( strcmp(loginInfo, USR) == 0 ) //if login info verified
+			printf("cmp data: %s\n", USR_PASS);
+			printf("cmp data length: %d\n", (int)strlen(USR_PASS));
+			printf("cmp result: %d\n", strcmp(loginInfo, USR_PASS));
+			if( strcmp(loginInfo, USR_PASS) == 0 ) //if login info verified
 				return 1;
 		}
 	}
@@ -93,45 +93,52 @@ int authenticate_user(char loginInfo[1024]){
 	return 0;
 }
 
-int authenticate_pass(char loginInfo[1024]){
-	FILE *fp; //filepointer
-	char PASS[1024]; //username and password
 
-	if(fp = fopen("access.txt","rb"), fp == NULL) //open file w/ usr/pass combos
-		return 0;
-	else{
-		while( fgets(PASS, 1024, fp) != NULL ){
-			PASS[strlen(PASS)-1] = '\0';
-			printf("login data: %s\n", loginInfo);
-			printf("login data length: %d\n", (int)strlen(loginInfo));
-			printf("cmp data: %s\n", USR);
-			printf("cmp data length: %d\n", (int)strlen(USR));
-			printf("cmp result: %d\n", strcmp(loginInfo, USR));
-			if( strcmp(loginInfo, USR) == 0 ) //if login info verified
-				return 1;
-		}
-	}
-  //otherwise invalide
+
+
+int send_ls_reply(int newSocket){
+
 	return 0;
 }
 
+int send_get_reply(int newSocket, int status){
+
+	return 0;
+}
+
+int recv_file_data(int newSocket, char directory[]){
+
+	return 0;
+}
+
+int send_new(int newSocket, const void* buf, int buf_len)
+{
+    int n_left = buf_len;         // actual data bytes sent
+    int n;
+    while (n_left > 0){
+        if ((n = send(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
+                if (errno == EINTR)
+                        n = 0;
+                else
+                        return -1;
+        } else if (n == 0) {
+                return 0;
+        }
+        n_left -= n;
+    }
+    return buf_len;
+}
+
+int send_file_data(int newSocket, FILE * fb){
+
+	return 0;
+}
 
 int send_auth(int newSocket, int status){ //send authorization reply to client
 	struct message_struct reply;
 	reply.protocol[0] = 0xe3;
 	strcat(reply.protocol, "myftp");
   reply.type = 0xA4;   //type indicates authorization reply message
-  reply.status = status;
-  reply.length = 12;
-	send(newSocket, (char*)(&reply),reply.length, 0); //send message
-	return 0;
-}
-
-int send_password(int newSocket, int status){
-  struct message_struct reply;
-	reply.protocol[0] = 0xe3;
-	strcat(reply.protocol, "myftp");
-  reply.type = 0xAF;   //type indicates authorization reply message
   reply.status = status;
   reply.length = 12;
 	send(newSocket, (char*)(&reply),reply.length, 0); //send message
@@ -182,38 +189,20 @@ void handle_data(int listnum) {
         break;
 
         /********************************
-         *	Handle Authentication User Request	*
+         *	Handle Authentication Request	*
          ********************************/
         case (char) 0xA3:
-            printf("Server received Authentication_Request_Username \n");
+            printf("Server received Authentication_Request \n");
             recv_message.payload[recv_message.length-5] = '\0'; //assign payload
             printf("Server is Authenticating: %s\n",recv_message.payload);
-            authenticated = authenticate_user(recv_message.payload); //authenticate request
-            send_auth(newSocket, authenticate_user(recv_message.payload)); //send reply
+            authenticated = authenticate(recv_message.payload); //authenticate request
+            send_auth(newSocket, authenticate(recv_message.payload)); //send reply
             printf("Server sent Authentication_Reply \n");
 
             if( authenticated != 1) //print authentication result
                 printf("\t(Server: Access Failed)\n");
             else
-                printf("\t(Server: User Verified)\n");
-
-        break;
-
-        /********************************
-         *	Handle Authentication User Request	*
-         ********************************/
-        case (char) 0xAE:
-            printf("Server received Authentication_Request_Username \n");
-            recv_message.payload[recv_message.length-5] = '\0'; //assign payload
-            printf("Server is Authenticating: %s\n",recv_message.payload);
-            authenticated = authenticate_pass(recv_message.payload); //authenticate request
-            send_password(newSocket, authenticate_pass(recv_message.payload)); //send reply
-            printf("Server sent Authentication_Reply \n");
-
-            if( authenticated != 1) //print authentication result
-                printf("\t(Server: Access Failed)\n");
-            else
-                printf("\t(Server: User Verified)\n");
+                printf("\t(Server: Access Granted)\n");
 
         break;
 

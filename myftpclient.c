@@ -23,7 +23,7 @@ struct message_s{
 int return_option(char str[]){
     if( strcasecmp(str,"open") == 0 )
         return 1;
-    if( strcasecmp(str,"USER") == 0 )
+    if( strcasecmp(str,"auth") == 0 )
         return 2;
     if( strcasecmp(str,"ls") == 0 )
         return 3;
@@ -31,8 +31,6 @@ int return_option(char str[]){
         return 4;
     if( strcasecmp(str,"put") == 0 )
         return 5;
-    if( stcasecm(str, "PASS") == 0)
-        return 6;
 
     return 0;
 }
@@ -47,7 +45,7 @@ void send_open_conn_request(int newSocket){
     send(newSocket, (char *)&send_message, send_message.length, 0);
 }
 
-void send_auth_user_request(int newSocket){
+void send_auth_request(int newSocket){
     struct message_s send_message;
     send_message.protocol[0] = 0xe3;
     strcat(send_message.protocol, "myftp");
@@ -57,15 +55,115 @@ void send_auth_user_request(int newSocket){
     send(newSocket, (char *)&send_message, send_message.length, 0);
 }
 
-void send_auth_pass_request(int newSocket){
-    struct message_s send_message;
-    send_message.protocol[0] = 0xe3;
-    strcat(send_message.protocol, "myftp");
-    send_message.type = 0xA3;
-    send_message.length = 12;
-    memset(send_message.payload, '\0', 1024);
-    send(newSocket, (char *)&send_message, send_message.length, 0);
+int recvn(int newSocket, void* buf, int buf_len){
+    int n_left = buf_len;
+    int n = 0;
+    while (n_left > 0){
+        if ((n = recv(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
+            if (errno == EINTR)
+                n = 0;
+            else
+                return -1;
+        } else if (n == 0){
+            return 0;
+        }
+        n_left -= n;
+    }
+    return buf_len;
 }
+
+int download_file(int newSocket, FILE * fb){
+    struct message_s data_message;
+    char correct_type = 0xFF;
+
+    do {
+        if ( recvn(newSocket, ((char*)&data_message), sizeof(struct message_s)) == -1 ){
+            printf("Error: Client - Failed to receive file.\n");
+            exit(-1);
+        }
+
+        if (data_message.type != correct_type){
+            //protocol_error_exit();
+            printf("Wrong header received, program terminated");
+            exit(-1);
+        }
+
+        fwrite(data_message.payload, 1, data_message.length-12, fb);
+
+    } while ( data_message.status != 0 );
+    return 0;
+}
+
+int sendn(int newSocket, const void* buf, int buf_len){
+    int n_left = buf_len;
+    int n;
+    while (n_left > 0){
+        if ((n = send(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
+                if (errno == EINTR)
+                        n = 0;
+                else
+                        return -1;
+        } else if (n == 0){
+                return 0;
+        }
+        n_left -= n;
+    }
+    return buf_len;
+}
+
+int upload_file(int newSocket, FILE * fb){
+    struct message_s data_message;
+    int size;
+
+    data_message.protocol[0] = 0xe3;
+    strcat(data_message.protocol, "myftp");
+    data_message.type = 0xFF;
+    data_message.status = 1;
+
+    do{
+        size = fread(data_message.payload, 1, 1024, fb);
+        if (size < 1024)
+            data_message.status = 0;
+        data_message.length = 12 + size;
+
+        if (sendn(newSocket, (char *)&data_message,sizeof(struct message_s)) == -1){
+            printf("Error: Client - Failed to send\n");
+            exit(-1);
+        }
+    } while( data_message.status != 0 );
+    return 0;
+}
+
+
+void send_quit_request(int newSocket, int *connected){
+    struct message_s message, recv_message;
+    char correct_type = 0xAC;
+
+    if( *connected )
+    {
+        printf("Disconnecting... ");
+        message.protocol[0] = 0xe3;
+        strcat(message.protocol, "myftp");
+        message.type = 0xAB;
+        message.length = 12;
+        memset(message.payload, '\0', 1024);
+        memset(recv_message.payload, '\0', 1024);
+
+        while ( send(newSocket,(char *)&message,message.length, 0) != 12 );
+        recv(newSocket,(char*)&recv_message, sizeof(struct message_s), 0);
+
+        if( recv_message.type == correct_type )
+            printf("Success!\n");
+        else
+            printf("Error Encountered!\n");
+    }
+    else
+    {
+        printf("(No opened connection to terminate)\n");
+    }
+    *connected = 0;
+}
+
 
 int main(int argc , char *argv[])
 {
@@ -113,7 +211,6 @@ int main(int argc , char *argv[])
                 printf("Error: Client - You haven't authenticated yet.\n");
                 continue;
             }
-
             switch( return_option(token) ){
                 /***********************
                  * Handle open command *
@@ -188,25 +285,25 @@ int main(int argc , char *argv[])
                     break;
 
                 /***********************
-                 * Handle auth user command *
+                 * Handle auth command *
                  ***********************/
                 case 2:
                     authenticated = 0;
                     token = strtok_r(NULL," \n", &thread_safety);
                     if( token == NULL ){
-                        printf("Usage: auth USER_ID USER\n");
+                        printf("Usage: auth USER_ID USER_PASSWORD\n");
                         continue;
                     }
                     strcpy(temp_login_id,token);
                     token = strtok_r(NULL," \n", &thread_safety);
                     if( token == NULL ){
-                        printf("Usage: auth USER_ID USER\n");
+                        printf("Usage: auth USER_ID USER_PASSWORD\n");
                         continue;
                     }
                     strcpy(temp_login_pw,token);
                     token = strtok_r(NULL," \n",&thread_safety);
                     if( token != NULL ){
-                        printf("Usage: auth USER_ID USER\n");
+                        printf("Usage: auth USER_ID USER_PASSWORD\n");
                         continue;
                     }
                     strcpy(login_id, temp_login_id);
@@ -234,7 +331,8 @@ int main(int argc , char *argv[])
                     }
                     if (recv_message.status == 1)
                     {
-                        printf("User Verified.\n");
+                        printf("Authentication granted.\n");
+                        authenticated = 1;
                     }
                     else
                     {
@@ -371,69 +469,10 @@ int main(int argc , char *argv[])
 
                     break;
 
-
-                /***********************
-                 * Handle auth user command *
-                 ***********************/
-                case 6:
-                    authenticated = 0;
-                    token = strtok_r(NULL," \n", &thread_safety);
-                    if( token == NULL ){
-                        printf("Usage: auth PASSWORD\n");
-                        continue;
-                    }
-                    strcpy(temp_login_id,token);
-                    token = strtok_r(NULL," \n", &thread_safety);
-                    if( token == NULL ){
-                        printf("Usage: auth PASSWORD\n");
-                        continue;
-                    }
-                    strcpy(temp_login_pw,token);
-                    token = strtok_r(NULL," \n",&thread_safety);
-                    if( token != NULL ){
-                        printf("Usage: auth PASSWORD\n");
-                        continue;
-                    }
-                    strcpy(login_id, temp_login_id);
-                    strcpy(login_pw, temp_login_pw);
-
-                    /* Authenciation */
-                    /* Prepare AUTH_REQUEST */
-                    send_message.protocol[0] = 0xe3;
-                    strcat(send_message.protocol, "myftp");
-                    send_message.type = 0xAE;
-                    send_message.length = 12 + strlen(login_id) + strlen(login_pw) + 1;
-                    strcpy(send_message.payload, login_id);
-                    strcat(send_message.payload, " ");
-                    strcat(send_message.payload, login_pw);
-                    while( send(newSocket, (char*)&send_message, send_message.length, 0) != 12 + strlen(login_id)+strlen(login_pw)+1);
-                    printf("PASS_REQUEST sent\n");
-
-                    /* Waiting for AUTH_REPLY */
-                    recv(newSocket, (char *)&recv_message,sizeof(struct message_s), 0);
-                    printf("AUTH_REPLY received\n");
-                    recv_type = 0xAF;
-                    if (recv_message.type != recv_type){
-                        printf("Error: Client - Wrong header received, terminating connection");
-                        exit(-1);
-                    }
-                    if (recv_message.status == 1)
-                    {
-                        printf("User Verified.\n");
-                        authenticated = 1;
-                    }
-                    else
-                    {
-                        printf("Authentication FAILED.\n");
-                        // Return IDLE state
-                        close(newSocket);
-                    }
-                    break;
                 case 0:
                     /* otherwise */
                     printf("Error: Client - Bad Command\n");
                 break;
-
 
             }
 

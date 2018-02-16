@@ -34,10 +34,10 @@
 #include <sys/stat.h>
 
 struct message_struct{
+    char protocol[6];
     char type;      //type is 1 byte
     char status;        //status is 1 byte
     int length;     // length is 4 bytes (header + payload)
-    char protocol[6];
     char payload[1024]; //payload
 } __attribute__ ((packed));
 
@@ -61,9 +61,10 @@ int send_open(int newSocket){ //sends an open connection reply to client
 
 	reply.protocol[0] = 0xe3;
 	strcat(reply.protocol, "myftp");
-  reply.length = 12;
+  reply.type = 0xA2;
   reply.status = 1;
-	reply.type = 0xA2;
+  reply.length = 12;
+
 
 	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
@@ -137,9 +138,9 @@ int send_auth(int newSocket, int status){ //send authorization reply to client
 	struct message_struct reply;
 	reply.protocol[0] = 0xe3;
 	strcat(reply.protocol, "myftp");
-  reply.length = 12;
-	reply.status = status;
   reply.type = 0xA4;   //type indicates authorization reply message
+  reply.status = status;
+  reply.length = 12;
 	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
 }

@@ -56,6 +56,19 @@ fd_set socks;        /* Socket file descriptors we want to wake
 int highsock;         /* Highest #'d file descriptor, needed for select() */
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
+int send_open(int newSocket){ //sends an open connection reply to client
+	struct message_struct reply;
+
+	reply.protocol[0] = 0xe3;
+	strcat(reply.protocol, "myftp");
+  reply.length = 12;
+  reply.status = 1;
+	reply.type = 0xA2;
+
+	send(newSocket, (char*)(&reply),reply.length, 0); //send message
+	return 0;
+}
+
 
 int authenticate(char loginInfo[1024]){
 	FILE *fp; //filepointer
@@ -79,20 +92,6 @@ int authenticate(char loginInfo[1024]){
 	return 0;
 }
 
-
-
-int send_open(int newSocket){ //sends an open connection reply to client
-	struct message_struct reply;
-
-	reply.protocol[0] = 0xe3;
-	strcat(reply.protocol, "myftp");
-  reply.length = 12;
-  reply.status = 1;
-	reply.type = 0xA2;
-
-	send(newSocket, (char*)(&reply),reply.length, 0); //send message
-	return 0;
-}
 
 
 
@@ -156,7 +155,7 @@ void handle_data(int listnum) {
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
     struct message_struct recv_message, send_message;
-    int authenticated, readSize;
+    int authenticated, readSize, connected;
 
     FILE *fb;
 	  char filename[1024]; //filename for ls
@@ -164,6 +163,7 @@ void handle_data(int listnum) {
 
 
     authenticated = 0;
+    connected = 0;
 
 
     // Get message from client and read

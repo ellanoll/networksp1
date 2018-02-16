@@ -425,6 +425,7 @@ int main(int argc, char* argv[]){
 	DIR *dir;
 /* SELECT() ------------------------------------------------------------------------ THEO */
     int readsocks;
+    struct timeval timeout;
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
 	if( argc != 2 ) //need at least two command line arguments

@@ -433,7 +433,7 @@ int main(int argc, char* argv[]){
 
     //set server port number from command line (8888)
 		if( server_port_num = atoi(argv[1]), server_port_num!=-1 && server_port_num>0 )
-			printf("\n# Server Started: Awaiting connections from Port %d #\n\n", server_port_num);
+			printf("\nServer Awaiting connections from Port %d \n\n", server_port_num);
 		else{
 			printf("\n\tError: Port number is out-of-range\n\n");
 			exit(-1);
@@ -447,7 +447,7 @@ int main(int argc, char* argv[]){
 		}
 
 		//server_port_num = 8888;
-		printf("\n# Server Started: Awaiting connections from Port %d #\n\n", server_port_num);
+		printf("\nServer Awaiting connections from Port %d \n\n", server_port_num);
 
 		// 1. Create a socket
 	  sock_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -491,6 +491,9 @@ int main(int argc, char* argv[]){
 
 /* SELECT() ------------------------------------------------------------------------ THEO */
             build_select_list(); //build list
+            timeout.tv_sec = 1;
+            timeout.tv_usec = 0;
+
             //use Select()
             readsocks = select(highsock+1, &socks, NULL , NULL , NULL);
 

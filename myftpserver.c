@@ -1,4 +1,4 @@
-// gcc sampleServer.c -o sampleServer -lpthread
+connected_sockssend_open// gcc sampleServer.c -o sampleServer -lpthread
 
 #include<stdio.h>
 #include<string.h>
@@ -33,23 +33,23 @@
 #include <pwd.h>
 #include <sys/stat.h>
 
-struct message_s{
+struct message_struct{
+    char type;      //type is 1 byte
+    char status;        //status is 1 byte
+    int length;     // length is 4 bytes (header + payload)
     char protocol[6];
-    char type;      /* type (1 byte) */
-    char status;        /* status (1 byte) */
-    int length;     /* length (header + payload) (4 bytes) */
-    char payload[1024]; /* payload */
+    char payload[1024]; //payload
 } __attribute__ ((packed));
 
 
 // Global variables
-int serverPortNumber = 0;
-int socketDescriptor = -1;
-struct sockaddr_in serverAddr,clientAddr;
+int server_port_num = 0;
+int sock_descriptor = -1;
+struct sockaddr_in server_address,clientAddr;
 char one;
 
 /* SELECT() ------------------------------------------------------------------------ THEO */
-int connectlist[5];  /* Array of connected sockets so we know who
+int connected_socks[5];  /* Array of connected sockets so we know who
                       we are talking to */
 fd_set socks;        /* Socket file descriptors we want to wake
                       up for, using select() */
@@ -57,53 +57,133 @@ int highsock;         /* Highest #'d file descriptor, needed for select() */
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
 
-int send_open_conn_reply(int newSocket){
-	struct message_s reply_message;
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void setnonblocking(sock_descriptor) int sock_descriptor; {
+    int opts;
 
-	reply_message.protocol[0] = 0xe3;
-	strcat(reply_message.protocol, "myftp");
-	reply_message.type = 0xA2;
-	reply_message.status = 1;
-	reply_message.length = 12;
+    opts = fcntl(sock_descriptor,F_GETFL);
+    if (opts < 0) {
+        perror("fcntl(F_GETFL)");
+        exit(EXIT_FAILURE);
+    }
+    opts = (opts | O_NONBLOCK);
+    if (fcntl(sock_descriptor,F_SETFL,opts) < 0) {
+        perror("fcntl(F_SETFL)");
+        exit(EXIT_FAILURE);
+    }
+    return;
+}
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void handle_new_connection() { //handles new socket connection
+    int listnum;         //current socket in list
+    int connection; //Socket file descriptor for incoming connections
 
-	send(newSocket, (char*)(&reply_message),reply_message.length, 0);
+
+    int c = sizeof(struct sockaddr_in);
+    //accept the socket
+    connection = accept(sock_descriptor, (struct sockaddr *)&clientAddr, (socklen_t*)&c);
+    if (connection < 0) {
+        perror("accept");
+        exit(EXIT_FAILURE);
+    }
+    setnonblocking(connection); //unblock that socket connection
+    //find listnum of newly connected socket
+    for (listnum = 0; (listnum < 5) && (connection != -1); listnum ++)
+        if (connected_socks[listnum] == 0) {
+            printf("\nConnection accepted:   FD=%d; Slot=%d\n",
+                   connection,listnum);
+            connected_socks[listnum] = connection;
+            connection = -1;
+        }
+    if (connection != -1) { //if no room left
+        printf("\nNo room left for new client. Try again later.\n");
+                  close(connection);
+    }
+}
+
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void build_select_list() { //builds fd_set for select()
+    int listnum;         //current socket in list
+
+    //clear out fd_set called socks
+    FD_ZERO(&socks);
+
+    //adds fd socket to the fd_set so select() returns if connection comes in
+    FD_SET(sock_descriptor,&socks);
+
+    //loop through possible connections and add sockets to fd_set
+    for (listnum = 0; listnum < 5; listnum++) {
+        if (connected_socks[listnum] != 0) {
+            FD_SET(connected_socks[listnum],&socks);
+            if (connected_socks[listnum] > highsock)
+                highsock = connected_socks[listnum];
+        }
+    }
+}
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void read_socks() {
+    int listnum;        // Current item in connected_socks for for loops
+
+     //check for listening sockets, accept new connection if socket is readable
+    if (FD_ISSET(sock_descriptor,&socks))
+        handle_new_connection();
+
+    //run through all sockets to check for requests
+    for (listnum = 0; listnum < 5; listnum++) {
+        if (FD_ISSET(connected_socks[listnum],&socks))
+            handle_data(listnum);
+    }
+}
+
+
+int send_open(int newSocket){ //sends an open connection reply to client
+	struct message_struct reply;
+
+	reply.protocol[0] = 0xe3;
+	strcat(reply.protocol, "myftp");
+  reply.length = 12;
+  reply.status = 1;
+	reply.type = 0xA2;
+
+	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
 }
 
-int check_auth(char loginInfo[1024]){
-	FILE *fp;
-	char usrnameAndPw[1024];
+int authenticate(char loginInfo[1024]){
+	FILE *fp; //filepointer
+	char USR_PASS[1024]; //username and password
 
-	if(fp = fopen("access.txt","rb"), fp == NULL)
+	if(fp = fopen("access.txt","rb"), fp == NULL) //open file w/ usr/pass combos
 		return 0;
 	else{
-		while( fgets(usrnameAndPw, 1024, fp) != NULL ){
-			usrnameAndPw[strlen(usrnameAndPw)-1] = '\0';
-			printf("login info: %s\n", loginInfo);
-			printf("login info length: %d\n", (int)strlen(loginInfo));
-			printf("cmp info: %s\n", usrnameAndPw);
-			printf("cmp info length: %d\n", (int)strlen(usrnameAndPw));
-			printf("cmp result: %d\n", strcmp(loginInfo, usrnameAndPw));
-			if( strcmp(loginInfo, usrnameAndPw) == 0 )
-				// login info verified
+		while( fgets(USR_PASS, 1024, fp) != NULL ){
+			USR_PASS[strlen(USR_PASS)-1] = '\0';
+			printf("login data: %s\n", loginInfo);
+			printf("login data length: %d\n", (int)strlen(loginInfo));
+			printf("cmp data: %s\n", USR_PASS);
+			printf("cmp data length: %d\n", (int)strlen(USR_PASS));
+			printf("cmp result: %d\n", strcmp(loginInfo, USR_PASS));
+			if( strcmp(loginInfo, USR_PASS) == 0 ) //if login info verified
 				return 1;
 		}
 	}
+  //otherwise invalide
 	return 0;
 }
 
-int send_auth_reply(int newSocket, int status){
-	struct message_s reply_message;
-	reply_message.protocol[0] = 0xe3;
-	strcat(reply_message.protocol, "myftp");
-	reply_message.type = 0xA4;
-	reply_message.status = status;
-	reply_message.length = 12;
-	send(newSocket, (char*)(&reply_message),reply_message.length, 0);
+int send_auth(int newSocket, int status){ //send authorization reply to client
+	struct message_struct reply;
+	reply.protocol[0] = 0xe3;
+	strcat(reply.protocol, "myftp");
+  reply.length = 12;
+	reply.status = status;
+  reply.type = 0xA4;   //type indicates authorization reply message
+	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
 }
 
-int list_dir_send_list_reply(int newSocket){
+
+int send_ls_reply(int newSocket){
 
 	return 0;
 }
@@ -113,7 +193,7 @@ int send_get_reply(int newSocket, int status){
 	return 0;
 }
 
-int sendn(int newSocket, const void* buf, int buf_len)
+int send_new(int newSocket, const void* buf, int buf_len)
 {
     int n_left = buf_len;         // actual data bytes sent
     int n;
@@ -137,7 +217,7 @@ int send_file_data(int newSocket, FILE * fb){
 }
 
 
-int recvn(int newSocket, void* buf, int buf_len){
+int recv_new(int newSocket, void* buf, int buf_len){
     int n_left = buf_len;
     int n = 0;
     while (n_left > 0){
@@ -163,273 +243,176 @@ int recv_file_data(int newSocket, char directory[]){
  * This will handle connection for each client
  * */
 /* SELECT() ------------------------------------------------------------------------ THEO */
-void deal_with_data(int listnum) {
-    // Get the socket descriptor
-    int newSocket = connectlist[listnum];
+void handle_data(int listnum) {
+    // Get the socket descriptor from list
+    int newSocket = connected_socks[listnum];
 
 /* SELECT() ------------------------------------------------------------------------ THEO */
-    int readSize;
-    int quit;
-    struct message_s recv_message, send_message;
-    int connected, authenticated;
+
+    struct message_struct recv_message, send_message;
+    int authenticated, readSize;
 
     FILE *fb;
-	char target_filename[1024];
-	char directory[1024 + 10];
+	  char filename[1024]; //filename for ls
+	  char directory[1024 + 10]; //directory for ls
+
 
     authenticated = 0;
-    connected = 0;
-    quit = 0;
 
 
-    // Get message from client
+    // Get message from client and read
     memset(recv_message.payload, '\0', 1024);
-    readSize = recv(newSocket, (char *)&recv_message, sizeof(struct message_s), 0);
-    // Print type, for debugging
+    readSize = recv(newSocket, (char *)&recv_message, sizeof(struct message_struct), 0);
+    // Print type of message, for debugging
     printf("recv_message.type is %x\n", recv_message.type);
-    // Analyze message
+    // Analyze message based on its type
     switch( recv_message.type ){
         /********************************
-         *	Handle OPEN_CONN_REQUEST	*
+         *	Handle open connection request	*
          ********************************/
         case (char) 0xA1:
-            printf("Server - OPEN_CONN_REQUEST received\n");
-            send_open_conn_reply(newSocket);
-            printf("Server - OPEN_CONN_REPLY sent\n");
-            connected = 1;
-            FD_SET(connectlist[listnum],&socks);
-            if (connectlist[listnum] > highsock)
-                highsock = connectlist[listnum];
+            printf("Server received Open_Connection_Request\n");
+            send_open(newSocket); //send open reply to client
+            printf("Server sent Open_Connection_Reply\n");
+          //  connected = 1; //socket is connected
+            FD_SET(connected_socks[listnum],&socks); //set socket in list
+            if (connected_socks[listnum] > highsock) //reasses highest socket
+                highsock = connected_socks[listnum];
 
         break;
 
         /********************************
-         *	Handle AUTH_REQUEST	*
+         *	Handle Authentication Request	*
          ********************************/
         case (char) 0xA3:
-            printf("Server - AUTH_REQUEST received\n");
-            recv_message.payload[recv_message.length-5] = '\0';
-            printf("Server - Authenticating: %s\n",recv_message.payload);
-            authenticated = check_auth(recv_message.payload);
-            send_auth_reply(newSocket, check_auth(recv_message.payload));
-            printf("Server - AUTH_REPLY sent\n");
+            printf("Server received Authentication_Request \n");
+            recv_message.payload[recv_message.length-5] = '\0'; //assign payload
+            printf("Server is Authenticating: %s\n",recv_message.payload);
+            authenticated = authenticate(recv_message.payload); //authenticate request
+            send_auth(newSocket, authenticate(recv_message.payload)); //send reply
+            printf("Server sent Authentication_Reply \n");
 
-            if( authenticated == 1)
-                printf("\t(Server - Access Granted)\n");
+            if( authenticated != 1) //print authentication result
+                printf("\t(Server: Access Failed)\n");
             else
-                printf("\t(Server - Access Failed)\n");
+                printf("\t(Server: Access Granted)\n");
 
         break;
 
         /********************************
-         *	Handle LIST_REQUEST	*
-         ********************************/
-        case (char) 0xA5:
-            printf("Server - LIST_REQUEST received\n");
-            if (authenticated) {
-                list_dir_send_list_reply(newSocket);
-                printf("Server - LIST_REPLY sent\n");
-            } else {
-                strcpy(send_message.payload, "Server - You are not authenticated!\n");
-                send_message.length = 12 + strlen(send_message.payload);
-                while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
-            }
-
-
-
-        break;
-
-        /********************************
-         *	Handle GET_REQUEST	*
-         ********************************/
-        case (char) 0xA7:
-            if (authenticated) {
-                strncpy(target_filename, recv_message.payload,recv_message.length-12);
-                target_filename[recv_message.length-12] = '\0';
-
-                printf("target filename: %s\n", target_filename);
-                printf("GET_REQUEST: %s\n", recv_message.payload);
-
-                strcpy(directory, "./filedir/");
-                strcat(directory, target_filename);
-                if(fb = fopen(directory, "rb"), fb != NULL){
-                    printf("Server - File found.\n");
-                                printf("directory: %s\n", directory);
-
-                    send_get_reply(newSocket, 1);
-                    printf("GET_REPLY Sent!\n");
-
-                            sleep(1);
-
-                    send_file_data(newSocket, fb);
-
-                    fclose(fb);
-
-                } else {
-                    printf("Error: Server - File does not exist.\n");
-                    send_get_reply(newSocket, 0);
-                    printf("GET_REPLY Sent\n");
-                }
-            } else {
-                strcpy(send_message.payload, "Server - You are not authenticated!\n");
-                send_message.length = 12 + strlen(send_message.payload);
-                while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
-            }
-        break;
-
-        /********************************
-         *	Handle PUT_REQUEST	*
+         *	Handle PUT_Request	*
          ********************************/
         case (char) 0xA9:
-            if (authenticated){
-                strncpy(target_filename, recv_message.payload,recv_message.length-12);
-                target_filename[recv_message.length-12] = '\0';
-                printf("target filename: %s\n", target_filename);
-                printf("PUT_REQUEST: %s\n", recv_message.payload);
-
-                printf("PUT_REQUEST Received\n");
+            if (!authenticated){
+              strcpy(send_message.payload, "Server: You are not authenticated!\n");
+              send_message.length = 12 + strlen(send_message.payload);
+              //send authentication error to client until successful
+              while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
+            }
+            else{
+                strncpy(filename, recv_message.payload,recv_message.length-12);
+                filename[recv_message.length-12] = '\0'; //set filename
+                printf("filename: %s\n", filename);
+                printf("PUT_Request: %s Received\n", recv_message.payload);
                 strcpy(directory, "./filedir/");
-                strcat(directory, target_filename);
-                memset(send_message.payload, '\0', 1024);
+                strcat(directory, filename);
+                memset(send_message.payload, '\0', 1024); //initialize payload
                 send_message.protocol[0] = 0xe3;
                 strcat(send_message.protocol, "myftp");
                 send_message.type = 0xAA;
                 send_message.length = 12;
+                //send message to client
                 send(newSocket, (char*)(&send_message), send_message.length, 0);
-                printf("PUT_REPLY Sent\n");
+                printf("PUT_Reply Sent\n");
+                //recieve file data
                 recv_file_data(newSocket, directory);
-            } else {
-                strcpy(send_message.payload, "Server - You are not authenticated!\n");
-                send_message.length = 12 + strlen(send_message.payload);
-                while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
             }
         break;
 
         /********************************
-         *	Handle QUIT_REQUEST	*
+         *	Handle GET request	*
+         ********************************/
+        case (char) 0xA7:
+            if (!authenticated) { //handle non authenticated user
+              strcpy(send_message.payload, "Server: You are not authenticated!\n");
+              send_message.length = 12 + strlen(send_message.payload);
+              //send authentication error to client until successful
+              while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
+            }
+            else{
+                strncpy(filename, recv_message.payload,recv_message.length-12);
+                filename[recv_message.length-12] = '\0';
+
+                printf("filename: %s\n", filename);
+                printf("GET_Request: %s\n", recv_message.payload);
+
+                strcpy(directory, "./filedir/");
+                strcat(directory, filename);
+                //if file found
+                if(fb = fopen(directory, "rb"), fb != NULL){
+                    printf("Server error: File found.\n");
+                                printf("directory: %s\n", directory);
+
+                    //send GET message reply to client as successful
+                    send_get_reply(newSocket, 1);
+                    printf("GET_Reply sent\n");
+
+                            sleep(1);
+
+                    //send file data
+                    send_file_data(newSocket, fb);
+
+                    fclose(fb);
+                }
+                else{ //if file not found
+                  printf("Error from Server: File does not exist.\n");
+                  //send GET message reply to client as failure
+                  send_get_reply(newSocket, 0);
+                  printf("GET_reply sent\n");
+                }
+            }
+        break;
+
+        /********************************
+         *	Handle ls	*
+         ********************************/
+        case (char) 0xA5:
+            printf("Server received ls request\n");
+            if (!authenticated) { //double check authentication
+                strcpy(send_message.payload, "Server - You are not authenticated!\n");
+                send_message.length = 12 + strlen(send_message.payload);
+                //send authentication error message to client until successful
+                while( send(newSocket, (char*)(&send_message),send_message.length, 0) != send_message.length );
+
+            } else { //if already authenticated send ls reply
+                send_ls_reply(newSocket);
+                printf("Server sent ls reply\n");
+            }
+        break;
+
+        /********************************
+         *	Handle Quit	*
          ********************************/
         case (char) 0xAB:
             printf("Disconnecting by request. (socket: %d)\n", newSocket);
 
+            //create message
             send_message.protocol[0] = 0xe3;
             strcat(send_message.protocol, "myftp");
             send_message.type = 0xAC;
             send_message.length = 12;
+            //continue sending until successful
             while( send(newSocket, (char*)(&send_message),send_message.length, 0) !=12 );
-            close(newSocket);
-            quit = 1;
+            close(newSocket); //close the socket
         break;
 
         /* Invalid Protocol */
         default:
-            printf("Error: Server - Invalid Protocol Received");
-            quit = 1;
+            printf("Error from server: Invalid Protocol Received");
         break;
     }
 
 
-}
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void setnonblocking(socketDescriptor) int socketDescriptor; {
-    int opts;
-
-    opts = fcntl(socketDescriptor,F_GETFL);
-    if (opts < 0) {
-        perror("fcntl(F_GETFL)");
-        exit(EXIT_FAILURE);
-    }
-    opts = (opts | O_NONBLOCK);
-    if (fcntl(socketDescriptor,F_SETFL,opts) < 0) {
-        perror("fcntl(F_SETFL)");
-        exit(EXIT_FAILURE);
-    }
-    return;
-}
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void handle_new_connection() {
-    int listnum;         /* Current item in connectlist for for loops */
-    int connection; /* Socket file descriptor for incoming connections */
-
-    /* We have a new connection coming in!  We'll
-     try to find a spot for it in connectlist. */
-    int c = sizeof(struct sockaddr_in);
-    connection = accept(socketDescriptor, (struct sockaddr *)&clientAddr, (socklen_t*)&c);
-    if (connection < 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
-    setnonblocking(connection);
-    for (listnum = 0; (listnum < 5) && (connection != -1); listnum ++)
-        if (connectlist[listnum] == 0) {
-            printf("\nConnection accepted:   FD=%d; Slot=%d\n",
-                   connection,listnum);
-            connectlist[listnum] = connection;
-            connection = -1;
-        }
-    if (connection != -1) {
-        /* No room left in the queue! */
-        printf("\nNo room left for new client.\n");
-                  close(connection);
-    }
-}
-
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void build_select_list() {
-    int listnum;         /* Current item in connectlist for for loops */
-
-    /* First put together fd_set for select(), which will
-     consist of the sock veriable in case a new connection
-     is coming in, plus all the sockets we have already
-     accepted. */
-
-
-    /* FD_ZERO() clears out the fd_set called socks, so that
-     it doesn't contain any file descriptors. */
-
-    FD_ZERO(&socks);
-
-    /* FD_SET() adds the file descriptor "sock" to the fd_set,
-     so that select() will return if a connection comes in
-     on that socket (which means you have to do accept(), etc. */
-
-    FD_SET(socketDescriptor,&socks);
-
-    /* Loops through all the possible connections and adds
-     those sockets to the fd_set */
-
-    for (listnum = 0; listnum < 5; listnum++) {
-        if (connectlist[listnum] != 0) {
-            FD_SET(connectlist[listnum],&socks);
-            if (connectlist[listnum] > highsock)
-                highsock = connectlist[listnum];
-        }
-    }
-}
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void read_socks() {
-    int listnum;         /* Current item in connectlist for for loops */
-
-    /* OK, now socks will be set with whatever socket(s)
-     are ready for reading.  Lets first check our
-     "listening" socket, and then check the sockets
-     in connectlist. */
-
-    /* If a client is trying to connect() to our listening
-     socket, select() will consider that as the socket
-     being 'readable'. Thus, if the listening socket is
-     part of the fd_set, we need to accept a new connection. */
-
-    if (FD_ISSET(socketDescriptor,&socks))
-        handle_new_connection();
-    /* Now check connectlist for available data */
-
-    /* Run through our sockets and check to see if anything
-     happened with them, if so 'service' them. */
-
-    for (listnum = 0; listnum < 5; listnum++) {
-        if (FD_ISSET(connectlist[listnum],&socks))
-            deal_with_data(listnum);
-    } /* for (all entries in queue) */
 }
 
 
@@ -438,15 +421,15 @@ int main(int argc, char* argv[]){
 	DIR *dir;
 /* SELECT() ------------------------------------------------------------------------ THEO */
     int readsocks;
-    struct timeval timeout;  /* Timeout for select */
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
-	if( argc != 2 )
+	if( argc != 2 ) //need at least two command line arguments
 		printf("\n\tUsage: %s [PORT_NUMBER]\n\n", argv[0]);
 	else{
 
-		if( serverPortNumber = atoi(argv[1]), serverPortNumber!=-1 && serverPortNumber>0 )
-			printf("\n# Server Started: Awaiting connections from Port %d #\n\n", serverPortNumber);
+    //set server port number from command line (8888)
+		if( server_port_num = atoi(argv[1]), server_port_num!=-1 && server_port_num>0 )
+			printf("\n# Server Started: Awaiting connections from Port %d #\n\n", server_port_num);
 		else{
 			printf("\n\tError: Port number is out-of-range\n\n");
 			exit(-1);
@@ -459,55 +442,52 @@ int main(int argc, char* argv[]){
 			closedir(dir);
 		}
 
-		//serverPortNumber = 8888;
-		printf("\n# Server Started: Awaiting connections from Port %d #\n\n", serverPortNumber);
+		//server_port_num = 8888;
+		printf("\n# Server Started: Awaiting connections from Port %d #\n\n", server_port_num);
 
 		// 1. Create a socket
-	    socketDescriptor = socket(AF_INET, SOCK_STREAM, 0);
-		if ( socketDescriptor == -1){
-			printf("Error: Server - Failed to create a socket\n");
+	  sock_descriptor = socket(AF_INET, SOCK_STREAM, 0);
+		if ( sock_descriptor == -1){ //check for success of creation
+			printf("Server error: socket creation failed\n");
 			exit(-1);
 		} else {
-			printf("Server - Socket created %d \n", socketDescriptor);
+			printf("Server error: socket creation successful %d \n", sock_descriptor);
 		}
 
-		// 2. Binding
-		setsockopt(socketDescriptor, SOL_SOCKET, SO_REUSEADDR, (char*)&one, sizeof(one));
+		// 2. Bind the socket
+		setsockopt(sock_descriptor, SOL_SOCKET, SO_REUSEADDR, (char*)&one, sizeof(one));
         /* SELECT() ------------------------------------------------------------------------ THEO */
-        setnonblocking(socketDescriptor);
+        setnonblocking(sock_descriptor);
         /* SELECT() ------------------------------------------------------------------------ THEO */
-		serverAddr.sin_family = AF_INET;
-		serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-		serverAddr.sin_port = htons(serverPortNumber);
-		if (bind(socketDescriptor, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < -1) {
+		server_address.sin_family = AF_INET;
+		server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+		server_address.sin_port = htons(server_port_num);
+		if (bind(sock_descriptor, (struct sockaddr *)&server_address, sizeof(server_address)) < -1) {
 			printf("\n\tError: Failed to bind\n\n");
 			exit(-1);
 		} else {
-			printf("Server - Binding succeeded\n");
+			printf("Server: Binding successful\n");
 		}
 
 		// 3. Put server in listening mode
-
-		if (listen(socketDescriptor, 3) == -1){
-			printf("Error: Server - Failed to be put in listening mode");
+		if (listen(sock_descriptor, 3) == -1){
+			printf("Server error: failed to be put in listening mode");
 			exit(-1);
 		} else {
-			printf("Server - Listening\n");
+			printf("Server is Listening\n");
 		}
 
 /* SELECT() ------------------------------------------------------------------------ THEO */
-        highsock = socketDescriptor;
-        memset((char *) &connectlist, 0, sizeof(connectlist));
+        highsock = sock_descriptor; //set highest descriptor
+        memset((char *) &connected_socks, 0, sizeof(connected_socks));
 /* SELECT() ------------------------------------------------------------------------ THEO */
-		// 4. Accept connections
+		// 4. Accept connections until quit
 
 		while (1){
 
 /* SELECT() ------------------------------------------------------------------------ THEO */
-            build_select_list();
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-
+            build_select_list(); //build list
+            //use Select()
             readsocks = select(highsock+1, &socks, NULL , NULL , NULL);
 
             if (readsocks < 0) {
@@ -515,13 +495,11 @@ int main(int argc, char* argv[]){
                 exit(EXIT_FAILURE);
             }
             if (readsocks == 0) {
-                /* Nothing ready to read, just show that
-                 we're alive */
+                //no requests, just show server still waiting
                 printf(".");
                 fflush(stdout);
-            } else
+            } else //read and handle socket connections/requests
                 read_socks();
         }
 	}
-/* SELECT() ------------------------------------------------------------------------ THEO */
 }

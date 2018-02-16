@@ -223,6 +223,7 @@ int main(int argc , char *argv[])
                 printf("Error: Client - You haven't authenticated yet.\n");
                 continue;
             }
+            printf(token);
             switch( return_option(token) ){
                 /***********************
                  * Handle open command *

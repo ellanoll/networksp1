@@ -1,4 +1,4 @@
-connected_sockssend_open// gcc sampleServer.c -o sampleServer -lpthread
+// gcc sampleServer.c -o sampleServer -lpthread
 
 #include<stdio.h>
 #include<string.h>
@@ -57,98 +57,6 @@ int highsock;         /* Highest #'d file descriptor, needed for select() */
 /* SELECT() ------------------------------------------------------------------------ THEO */
 
 
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void setnonblocking(sock_descriptor) int sock_descriptor; {
-    int opts;
-
-    opts = fcntl(sock_descriptor,F_GETFL);
-    if (opts < 0) {
-        perror("fcntl(F_GETFL)");
-        exit(EXIT_FAILURE);
-    }
-    opts = (opts | O_NONBLOCK);
-    if (fcntl(sock_descriptor,F_SETFL,opts) < 0) {
-        perror("fcntl(F_SETFL)");
-        exit(EXIT_FAILURE);
-    }
-    return;
-}
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void handle_new_connection() { //handles new socket connection
-    int listnum;         //current socket in list
-    int connection; //Socket file descriptor for incoming connections
-
-
-    int c = sizeof(struct sockaddr_in);
-    //accept the socket
-    connection = accept(sock_descriptor, (struct sockaddr *)&clientAddr, (socklen_t*)&c);
-    if (connection < 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
-    setnonblocking(connection); //unblock that socket connection
-    //find listnum of newly connected socket
-    for (listnum = 0; (listnum < 5) && (connection != -1); listnum ++)
-        if (connected_socks[listnum] == 0) {
-            printf("\nConnection accepted:   FD=%d; Slot=%d\n",
-                   connection,listnum);
-            connected_socks[listnum] = connection;
-            connection = -1;
-        }
-    if (connection != -1) { //if no room left
-        printf("\nNo room left for new client. Try again later.\n");
-                  close(connection);
-    }
-}
-
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void build_select_list() { //builds fd_set for select()
-    int listnum;         //current socket in list
-
-    //clear out fd_set called socks
-    FD_ZERO(&socks);
-
-    //adds fd socket to the fd_set so select() returns if connection comes in
-    FD_SET(sock_descriptor,&socks);
-
-    //loop through possible connections and add sockets to fd_set
-    for (listnum = 0; listnum < 5; listnum++) {
-        if (connected_socks[listnum] != 0) {
-            FD_SET(connected_socks[listnum],&socks);
-            if (connected_socks[listnum] > highsock)
-                highsock = connected_socks[listnum];
-        }
-    }
-}
-/* SELECT() ------------------------------------------------------------------------ THEO */
-void read_socks() {
-    int listnum;        // Current item in connected_socks for for loops
-
-     //check for listening sockets, accept new connection if socket is readable
-    if (FD_ISSET(sock_descriptor,&socks))
-        handle_new_connection();
-
-    //run through all sockets to check for requests
-    for (listnum = 0; listnum < 5; listnum++) {
-        if (FD_ISSET(connected_socks[listnum],&socks))
-            handle_data(listnum);
-    }
-}
-
-
-int send_open(int newSocket){ //sends an open connection reply to client
-	struct message_struct reply;
-
-	reply.protocol[0] = 0xe3;
-	strcat(reply.protocol, "myftp");
-  reply.length = 12;
-  reply.status = 1;
-	reply.type = 0xA2;
-
-	send(newSocket, (char*)(&reply),reply.length, 0); //send message
-	return 0;
-}
-
 int authenticate(char loginInfo[1024]){
 	FILE *fp; //filepointer
 	char USR_PASS[1024]; //username and password
@@ -171,16 +79,21 @@ int authenticate(char loginInfo[1024]){
 	return 0;
 }
 
-int send_auth(int newSocket, int status){ //send authorization reply to client
+
+
+int send_open(int newSocket){ //sends an open connection reply to client
 	struct message_struct reply;
+
 	reply.protocol[0] = 0xe3;
 	strcat(reply.protocol, "myftp");
   reply.length = 12;
-	reply.status = status;
-  reply.type = 0xA4;   //type indicates authorization reply message
+  reply.status = 1;
+	reply.type = 0xA2;
+
 	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
 }
+
 
 
 int send_ls_reply(int newSocket){
@@ -189,6 +102,11 @@ int send_ls_reply(int newSocket){
 }
 
 int send_get_reply(int newSocket, int status){
+
+	return 0;
+}
+
+int recv_file_data(int newSocket, char directory[]){
 
 	return 0;
 }
@@ -216,26 +134,14 @@ int send_file_data(int newSocket, FILE * fb){
 	return 0;
 }
 
-
-int recv_new(int newSocket, void* buf, int buf_len){
-    int n_left = buf_len;
-    int n = 0;
-    while (n_left > 0){
-        if ((n = recv(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
-            if (errno == EINTR)
-                n = 0;
-            else
-                return -1;
-        } else if (n == 0){
-            return 0;
-        }
-        n_left -= n;
-    }
-    return buf_len;
-}
-
-int recv_file_data(int newSocket, char directory[]){
-
+int send_auth(int newSocket, int status){ //send authorization reply to client
+	struct message_struct reply;
+	reply.protocol[0] = 0xe3;
+	strcat(reply.protocol, "myftp");
+  reply.length = 12;
+	reply.status = status;
+  reply.type = 0xA4;   //type indicates authorization reply message
+	send(newSocket, (char*)(&reply),reply.length, 0); //send message
 	return 0;
 }
 
@@ -414,6 +320,104 @@ void handle_data(int listnum) {
 
 
 }
+
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void setnonblocking(sock_descriptor) int sock_descriptor; {
+    int opts;
+
+    opts = fcntl(sock_descriptor,F_GETFL);
+    if (opts < 0) {
+        perror("fcntl(F_GETFL)");
+        exit(EXIT_FAILURE);
+    }
+    opts = (opts | O_NONBLOCK);
+    if (fcntl(sock_descriptor,F_SETFL,opts) < 0) {
+        perror("fcntl(F_SETFL)");
+        exit(EXIT_FAILURE);
+    }
+    return;
+}
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void handle_new_connection() { //handles new socket connection
+    int listnum;         //current socket in list
+    int connection; //Socket file descriptor for incoming connections
+
+
+    int c = sizeof(struct sockaddr_in);
+    //accept the socket
+    connection = accept(sock_descriptor, (struct sockaddr *)&clientAddr, (socklen_t*)&c);
+    if (connection < 0) {
+        perror("accept");
+        exit(EXIT_FAILURE);
+    }
+    setnonblocking(connection); //unblock that socket connection
+    //find listnum of newly connected socket
+    for (listnum = 0; (listnum < 5) && (connection != -1); listnum ++)
+        if (connected_socks[listnum] == 0) {
+            printf("\nConnection accepted:   FD=%d; Slot=%d\n",
+                   connection,listnum);
+            connected_socks[listnum] = connection;
+            connection = -1;
+        }
+    if (connection != -1) { //if no room left
+        printf("\nNo room left for new client. Try again later.\n");
+                  close(connection);
+    }
+}
+
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void build_select_list() { //builds fd_set for select()
+    int listnum;         //current socket in list
+
+    //clear out fd_set called socks
+    FD_ZERO(&socks);
+
+    //adds fd socket to the fd_set so select() returns if connection comes in
+    FD_SET(sock_descriptor,&socks);
+
+    //loop through possible connections and add sockets to fd_set
+    for (listnum = 0; listnum < 5; listnum++) {
+        if (connected_socks[listnum] != 0) {
+            FD_SET(connected_socks[listnum],&socks);
+            if (connected_socks[listnum] > highsock)
+                highsock = connected_socks[listnum];
+        }
+    }
+}
+/* SELECT() ------------------------------------------------------------------------ THEO */
+void read_socks() {
+    int listnum;        // Current item in connected_socks for for loops
+
+     //check for listening sockets, accept new connection if socket is readable
+    if (FD_ISSET(sock_descriptor,&socks))
+        handle_new_connection();
+
+    //run through all sockets to check for requests
+    for (listnum = 0; listnum < 5; listnum++) {
+        if (FD_ISSET(connected_socks[listnum],&socks)){
+            handle_data(listnum);}
+    }
+}
+
+
+
+int recv_new(int newSocket, void* buf, int buf_len){
+    int n_left = buf_len;
+    int n = 0;
+    while (n_left > 0){
+        if ((n = recv(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
+            if (errno == EINTR)
+                n = 0;
+            else
+                return -1;
+        } else if (n == 0){
+            return 0;
+        }
+        n_left -= n;
+    }
+    return buf_len;
+}
+
 
 
 int main(int argc, char* argv[]){

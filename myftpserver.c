@@ -71,21 +71,50 @@ int send_open(int newSocket){ //sends an open connection reply to client
 }
 
 
-int authenticate(char loginInfo[1024]){
+
+int authenticate_user(char loginInfo[1024]){
 	FILE *fp; //filepointer
-	char USR_PASS[1024]; //username and password
+	char USR[1024]; //username
+	int spaces = 0;
+	loginInfo[strlen(loginInfo)-1] = '\0';
 
 	if(fp = fopen("access.txt","rb"), fp == NULL) //open file w/ usr/pass combos
 		return 0;
 	else{
-		while( fgets(USR_PASS, 1024, fp) != NULL ){
-			USR_PASS[strlen(USR_PASS)-1] = '\0';
+		while( fgets(USR, 1024, fp) != NULL ){
+			for(int i=0;i<strlen(USR); i++){
+				if(USR[i] == ' '){
+					USR[i] = '\0';
+				}
+			}
 			printf("login data: %s\n", loginInfo);
 			printf("login data length: %d\n", (int)strlen(loginInfo));
-			printf("cmp data: %s\n", USR_PASS);
-			printf("cmp data length: %d\n", (int)strlen(USR_PASS));
-			printf("cmp result: %d\n", strcmp(loginInfo, USR_PASS));
-			if( strcmp(loginInfo, USR_PASS) == 0 ) //if login info verified
+			printf("cmp data: %s\n", USR);
+			printf("cmp data length: %d\n", (int)strlen(USR));
+			printf("cmp result: %d\n", strcmp(loginInfo, USR));
+			if( strcmp(loginInfo, USR) == 0 ) //if login info verified
+				return 1;
+		}
+	}
+  //otherwise invalide
+	return 0;
+}
+
+int authenticate_pass(char loginInfo[1024]){
+	FILE *fp; //filepointer
+	char USR[1024]; //username
+
+	if(fp = fopen("access.txt","rb"), fp == NULL) //open file w/ usr/pass combos
+		return 0;
+	else{
+		while( fgets(USR, 1024, fp) != NULL ){
+			USR[strlen(USR)-1] = '\0';
+			printf("login data: %s\n", loginInfo);
+			printf("login data length: %d\n", (int)strlen(loginInfo));
+			printf("cmp data: %s\n", USR);
+			printf("cmp data length: %d\n", (int)strlen(USR));
+			printf("cmp result: %d\n", strcmp(loginInfo, USR));
+			if( strcmp(loginInfo, USR) == 0 ) //if login info verified
 				return 1;
 		}
 	}
@@ -145,6 +174,17 @@ int send_auth(int newSocket, int status){ //send authorization reply to client
 	return 0;
 }
 
+int send_pass(int newSocket, int status){ //send authorization reply to client
+	struct message_struct reply;
+	reply.protocol[0] = 0xe3;
+	strcat(reply.protocol, "myftp");
+  reply.type = 0xB2;   //type indicates authorization reply message
+  reply.status = status;
+  reply.length = 12;
+	send(newSocket, (char*)(&reply),reply.length, 0); //send message
+	return 0;
+}
+
 /*
  * This will handle connection for each client
  * */
@@ -195,14 +235,32 @@ void handle_data(int listnum) {
             printf("Server received Authentication_Request \n");
             recv_message.payload[recv_message.length-5] = '\0'; //assign payload
             printf("Server is Authenticating: %s\n",recv_message.payload);
-            authenticated = authenticate(recv_message.payload); //authenticate request
-            send_auth(newSocket, authenticate(recv_message.payload)); //send reply
+            authenticated = authenticate_user(recv_message.payload); //authenticate request
+            send_auth(newSocket, authenticated); //send reply
             printf("Server sent Authentication_Reply \n");
 
             if( authenticated != 1) //print authentication result
                 printf("\t(Server: Access Failed)\n");
             else
                 printf("\t(Server: Access Granted)\n");
+
+        break;
+
+        /********************************
+         *	Handle Authentication Request	*
+         ********************************/
+        case (char) 0xB1:
+            printf("Server received PASS Authentication_Request \n");
+            recv_message.payload[recv_message.length-5] = '\0'; //assign payload
+            printf("Server is Authenticating PASS: %s\n",recv_message.payload);
+            authenticated = authenticate_pass(recv_message.payload); //authenticate request
+            send_pass(newSocket, authenticated); //send reply
+            printf("Server sent PASS Authentication_Reply \n");
+
+            if( authenticated != 1) //print authentication result
+                printf("\t(Server: PASS Access Failed)\n");
+            else
+                printf("\t(Server: PASS Access Granted)\n");
 
         break;
 

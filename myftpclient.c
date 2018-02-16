@@ -2,7 +2,6 @@
     C ECHO client example using sockets
 */
 #include "myftp.h"
-
 char server_IP[1024];
 int server_port_number;
 
@@ -23,7 +22,7 @@ struct message_s{
 int return_option(char str[]){
     if( strcasecmp(str,"open") == 0 )
         return 1;
-    if( strcasecmp(str,"auth") == 0 )
+    if( strcasecmp(str,"USER") == 0 )
         return 2;
     if( strcasecmp(str,"ls") == 0 )
         return 3;
@@ -31,6 +30,8 @@ int return_option(char str[]){
         return 4;
     if( strcasecmp(str,"put") == 0 )
         return 5;
+   	if( strcasecmp(str,"PASS") == 0 )
+        return 6;
 
     return 0;
 }
@@ -184,7 +185,8 @@ int main(int argc , char *argv[])
     FILE * fb;
 
     int connected = 0;
-    int authenticated = 0;
+    int authenticated_user = 0;
+    int authenticated_pass = 0;
     char *thread_safety;
 
     char recv_type;
@@ -207,7 +209,7 @@ int main(int argc , char *argv[])
                 printf("Error: Client - No connection established. Have you tried \"open\"?\n");
                 continue;
             }
-            if( return_option(token)>2 && authenticated == 0 ){
+            if( return_option(token)>2 && authenticated_user == 0 ){
                 printf("Error: Client - You haven't authenticated yet.\n");
                 continue;
             }
@@ -288,37 +290,38 @@ int main(int argc , char *argv[])
                  * Handle auth command *
                  ***********************/
                 case 2:
-                    authenticated = 0;
+                    authenticated_user = 0;
                     token = strtok_r(NULL," \n", &thread_safety);
                     if( token == NULL ){
                         printf("Usage: auth USER_ID USER_PASSWORD\n");
                         continue;
                     }
-                    strcpy(temp_login_id,token);
-                    token = strtok_r(NULL," \n", &thread_safety);
-                    if( token == NULL ){
-                        printf("Usage: auth USER_ID USER_PASSWORD\n");
-                        continue;
-                    }
-                    strcpy(temp_login_pw,token);
-                    token = strtok_r(NULL," \n",&thread_safety);
-                    if( token != NULL ){
-                        printf("Usage: auth USER_ID USER_PASSWORD\n");
-                        continue;
-                    }
+                     strcpy(temp_login_id,token);
+                    // token = strtok_r(NULL," \n", &thread_safety);
+                    // if( token == NULL ){
+                    //     printf("Usage: auth USER_ID USER_PASSWORD\n");
+                    //     continue;
+                    // }
+                    // strcpy(temp_login_pw,token);
+                    // token = strtok_r(NULL," \n",&thread_safety);
+                    // if( token != NULL ){
+                    //     printf("Usage: auth USER_ID USER_PASSWORD\n");
+                    //     continue;
+                    // }
                     strcpy(login_id, temp_login_id);
-                    strcpy(login_pw, temp_login_pw);
+                   // strcpy(login_pw, temp_login_pw);
 
                     /* Authenciation */
                     /* Prepare AUTH_REQUEST */
+                     printf("login id: %s\n",login_id);
                     send_message.protocol[0] = 0xe3;
                     strcat(send_message.protocol, "myftp");
                     send_message.type = 0xA3;
-                    send_message.length = 12 + strlen(login_id) + strlen(login_pw) + 1;
+                    send_message.length = 12 + strlen(login_id) + 1;
                     strcpy(send_message.payload, login_id);
                     strcat(send_message.payload, " ");
-                    strcat(send_message.payload, login_pw);
-                    while( send(newSocket, (char*)&send_message, send_message.length, 0) != 12 + strlen(login_id)+strlen(login_pw)+1);
+                    // strcat(send_message.payload, login_pw);
+                    while( send(newSocket, (char*)&send_message, send_message.length, 0) != 12 + strlen(login_id)+1);
                     printf("AUTH_REQUEST sent\n");
 
                     /* Waiting for AUTH_REPLY */
@@ -332,7 +335,7 @@ int main(int argc , char *argv[])
                     if (recv_message.status == 1)
                     {
                         printf("Authentication granted.\n");
-                        authenticated = 1;
+                        authenticated_user = 1;
                     }
                     else
                     {
@@ -341,6 +344,53 @@ int main(int argc , char *argv[])
                         close(newSocket);
                     }
                     break;
+
+                 /***********************
+                 * Handle ls command *
+                 ***********************/
+                case 6:
+                    token = strtok_r(NULL," \n", &thread_safety);
+                    if( token == NULL ){
+                        printf("Usage: auth USER_ID USER_PASSWORD\n");
+                        continue;
+                    }
+                     strcpy(temp_login_pw,token);
+                    strcpy(login_pw, temp_login_pw);
+
+                    /* Authenciation */
+                    /* Prepare AUTH_REQUEST */
+                     printf("login id: %s\n",login_id);
+                    send_message.protocol[0] = 0xe3;
+                    strcat(send_message.protocol, "myftp");
+                    send_message.type = 0xB1;
+                    send_message.length = 12 + strlen(temp_login_id) + strlen(login_pw) + 1;
+                    strcpy(send_message.payload, temp_login_id);
+                    strcat(send_message.payload, " ");
+                    strcat(send_message.payload, login_pw);
+                    while( send(newSocket, (char*)&send_message, send_message.length, 0) != 12 + strlen(temp_login_id) + strlen(login_pw)+1);
+                    printf("AUTH_REQUEST sent\n");
+
+                    /* Waiting for AUTH_REPLY */
+                    recv(newSocket, (char *)&recv_message,sizeof(struct message_s), 0);
+                    printf("AUTH_REPLY received\n");
+                    recv_type = 0xB2;
+                    if (recv_message.type != recv_type){
+                        printf("Error: Client - Wrong header received, terminating connection");
+                        exit(-1);
+                    }
+                    if (recv_message.status == 1)
+                    {
+                        printf("Authentication granted.\n");
+                        authenticated_pass = 1;
+                    }
+                    else
+                    {
+                        printf("Authentication FAILED.\n");
+                        // Return IDLE state
+                    }
+                    break;
+
+
 
                 /***********************
                  * Handle ls command *

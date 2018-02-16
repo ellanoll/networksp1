@@ -67,116 +67,6 @@ void send_auth_pass_request(int newSocket){
     send(newSocket, (char *)&send_message, send_message.length, 0);
 }
 
-int recvn(int newSocket, void* buf, int buf_len){
-    int n_left = buf_len;
-    int n = 0;
-    while (n_left > 0){
-        if ((n = recv(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
-            if (errno == EINTR)
-                n = 0;
-            else
-                return -1;
-        } else if (n == 0){
-            return 0;
-        }
-        n_left -= n;
-    }
-    return buf_len;
-}
-
-int download_file(int newSocket, FILE * fb){
-    struct message_s data_message;
-    char correct_type = 0xFF;
-
-    do {
-        if ( recvn(newSocket, ((char*)&data_message), sizeof(struct message_s)) == -1 ){
-            printf("Error: Client - Failed to receive file.\n");
-            exit(-1);
-        }
-
-        if (data_message.type != correct_type){
-            //protocol_error_exit();
-            printf("Wrong header received, program terminated");
-            exit(-1);
-        }
-
-        fwrite(data_message.payload, 1, data_message.length-12, fb);
-
-    } while ( data_message.status != 0 );
-    return 0;
-}
-
-int sendn(int newSocket, const void* buf, int buf_len){
-    int n_left = buf_len;
-    int n;
-    while (n_left > 0){
-        if ((n = send(newSocket, buf + (buf_len - n_left), n_left, 0)) < 0){
-                if (errno == EINTR)
-                        n = 0;
-                else
-                        return -1;
-        } else if (n == 0){
-                return 0;
-        }
-        n_left -= n;
-    }
-    return buf_len;
-}
-
-int upload_file(int newSocket, FILE * fb){
-    struct message_s data_message;
-    int size;
-
-    data_message.protocol[0] = 0xe3;
-    strcat(data_message.protocol, "myftp");
-    data_message.type = 0xFF;
-    data_message.status = 1;
-
-    do{
-        size = fread(data_message.payload, 1, 1024, fb);
-        if (size < 1024)
-            data_message.status = 0;
-        data_message.length = 12 + size;
-
-        if (sendn(newSocket, (char *)&data_message,sizeof(struct message_s)) == -1){
-            printf("Error: Client - Failed to send\n");
-            exit(-1);
-        }
-    } while( data_message.status != 0 );
-    return 0;
-}
-
-
-void send_quit_request(int newSocket, int *connected){
-    struct message_s message, recv_message;
-    char correct_type = 0xAC;
-
-    if( *connected )
-    {
-        printf("Disconnecting... ");
-        message.protocol[0] = 0xe3;
-        strcat(message.protocol, "myftp");
-        message.type = 0xAB;
-        message.length = 12;
-        memset(message.payload, '\0', 1024);
-        memset(recv_message.payload, '\0', 1024);
-
-        while ( send(newSocket,(char *)&message,message.length, 0) != 12 );
-        recv(newSocket,(char*)&recv_message, sizeof(struct message_s), 0);
-
-        if( recv_message.type == correct_type )
-            printf("Success!\n");
-        else
-            printf("Error Encountered!\n");
-    }
-    else
-    {
-        printf("(No opened connection to terminate)\n");
-    }
-    *connected = 0;
-}
-
-
 int main(int argc , char *argv[])
 {
     char client_command[1024];
@@ -223,7 +113,7 @@ int main(int argc , char *argv[])
                 printf("Error: Client - You haven't authenticated yet.\n");
                 continue;
             }
-            printf(token);
+
             switch( return_option(token) ){
                 /***********************
                  * Handle open command *
